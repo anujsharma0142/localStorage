@@ -1,9 +1,9 @@
-import {Button, StyleSheet, Text, View, Image} from 'react-native';
-import React, {useState, useEffect} from 'react';
+import React, { useState, useEffect } from 'react';
+import { Button, StyleSheet, Text, View, Image, Platform } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import DocumentPicker from 'react-native-document-picker';
 import storage from '@react-native-firebase/storage';
-import {AsyncStorage} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const ImageUpload = () => {
   const [imageData, setImageData] = useState(null);
@@ -11,17 +11,38 @@ const ImageUpload = () => {
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {
-      console.log('Connection type', state.type);
-
-      console.log('Is connected?', state.isConnected);
-
       setIsConnected(state.isConnected);
     });
 
     return () => {
       unsubscribe();
     };
-  });
+  }, []);
+
+  useEffect(() => {
+    const uploadLocallyStoredData = async () => {
+      try {
+        if (isConnected) {
+          const storedData = await AsyncStorage.getItem(`/${imageData?.name}`);
+          if (storedData) {
+            const uri = JSON.parse(storedData); // Parse the stored uri
+
+            const response = await storage()
+              .ref(`/${imageData.name}`)
+              .putFile(uri);
+
+            console.log(response);
+            alert('Locally stored image uploaded successfully');
+            await AsyncStorage.removeItem(`/${imageData.name}`);
+          }
+        }
+      } catch (err) {
+        console.log(err);
+      }
+    };
+
+    uploadLocallyStoredData();
+  }, [isConnected]);
 
   const pickImage = async () => {
     try {
@@ -36,46 +57,61 @@ const ImageUpload = () => {
   };
 
   const uploadImage = async () => {
-    if (!isConnected) {
-      await AsyncStorage.setItem(
-        `/${imageData.name}`,
-        JSON.stringify(imageData.uri),
-      );
+    if (!imageData) {
+      return; // No image selected
     }
 
-    try {
-      const response = await storage()
-        .ref(`/${imageData.name}`)
-        .putFile(imageData.uri);
+    const uri = Platform.OS === 'android' ? imageData.uri : imageData.uri.replace('file://', '');
 
-      console.log(response);
-      alert('Image Uploaded Successfully');
+    if (isConnected) {
+      try {
+        const response = await storage()
+          .ref(`/${imageData.name}`)
+          .putFile(uri);
+
+        console.log(response);
+        alert('Image Uploaded Successfully');
+      } catch (err) {
+        console.log(err);
+      }
+    } else {
+      try {
+        await AsyncStorage.setItem(
+          `/${imageData.name}`,
+          JSON.stringify(imageData.uri) // Store the whole uri
+        );
+        console.log('Image stored locally');
+      } catch (err) {
+        console.log(err);
+      }
+    }
+  };
+
+  const getData = async () => {
+    console.log('getData Called');
+
+    try {
+      const val = await AsyncStorage.getItem(`/${imageData?.name}`);
+
+      if (val) {
+        console.log('Value is', val);
+      }
     } catch (err) {
       console.log(err);
     }
   };
 
-  const getData = async () => {
-    console.log('getdata Called');
-
-    try {
-      const val = await AsyncStorage.getItem(`/${imageData.name}`);
-
-      // AsyncStorage.removeItem('userInfo')
-
-      if (val) {
-        console.log('Value is ', val);
-      }
-      
-    } catch (err) {}
-  };
-
   return (
-    <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
       {imageData ? (
         <Image
-          source={{uri: imageData.uri}}
-          style={{width: 200, height: 200, marginBottom: 20}}
+          source={{ uri: imageData.uri }}
+          style={{
+            width: 200,
+            height: 200,
+            marginBottom: 20,
+            borderRadius: 100,
+          }}
         />
       ) : (
         <Text>No Image Found!</Text>
@@ -86,10 +122,11 @@ const ImageUpload = () => {
           width: '100%',
           flexDirection: 'row',
           justifyContent: 'space-around',
-        }}>
-        <Button title="Select Image" onPress={() => pickImage()} />
-        <Button title="Upload Image" onPress={() => uploadImage()} />
-        <Button title="Get Data" onPress={() => getData()} />
+        }}
+      >
+        <Button title="Select Image" onPress={pickImage} />
+        <Button title="Upload Image" onPress={uploadImage} />
+        <Button title="Get Data" onPress={getData} />
       </View>
     </View>
   );
@@ -98,3 +135,4 @@ const ImageUpload = () => {
 export default ImageUpload;
 
 const styles = StyleSheet.create({});
+
